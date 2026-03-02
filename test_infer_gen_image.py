@@ -2,6 +2,7 @@ import os
 import time
 import torch
 from transformers import AutoProcessor
+from transformers.utils import is_flash_attn_2_available
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
@@ -34,10 +35,11 @@ def generate(messages, processor, model, save_image_path):
 if __name__ == '__main__':
     model_path = "."
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "sdpa"
     model = BailingMMNativeForConditionalGeneration.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
     ).to("cuda")
 
     model.load_image_gen_modules(model_path)

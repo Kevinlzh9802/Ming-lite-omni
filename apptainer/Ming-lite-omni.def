@@ -1,0 +1,83 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
+
+%labels
+    Author zonghuan
+    Description "Apptainer image for Ming-Lite-Omni inference"
+
+%environment
+    export LC_ALL=C
+    export LANG=C
+    export PYTHONUNBUFFERED=1
+    export PIP_NO_CACHE_DIR=1
+    export PYTHONDONTWRITEBYTECODE=1
+    export OMP_NUM_THREADS=8
+
+%post
+    set -eux
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        git \
+        ffmpeg \
+        libsndfile1 \
+        libgl1 \
+        libglib2.0-0 \
+        build-essential \
+        ca-certificates
+    rm -rf /var/lib/apt/lists/*
+
+    python -m pip install --upgrade pip setuptools wheel
+
+    # Create an internal fallback requirements file so build does not depend
+    # on %files path resolution differences across apptainer versions.
+    cat >/tmp/requirements.txt <<'EOF'
+numpy==1.26.4
+packaging==24.2
+requests==2.32.3
+Pillow==10.4.0
+scipy==1.13.1
+PyYAML==6.0.2
+hyperpyyaml==1.2.2
+omegaconf==2.3.0
+einops==0.8.1
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+transformers==4.45.0
+tokenizers==0.20.3
+peft==0.13.2
+funasr==1.1.14
+decord==0.6.0
+onnxruntime==1.20.1
+openai-whisper==20240930
+conformer==0.3.2
+inflect==7.4.0
+modelscope==1.20.1
+diffusers==0.33.0
+lightning==2.4.0
+gdown==5.2.0
+EOF
+
+    # Install Python dependencies for inference.
+    pip install -r /tmp/requirements.txt
+
+    # Optional acceleration packages. Some environments have no compatible
+    # prebuilt wheels, so these should not fail the whole image build.
+    pip install flash-attn==2.3.6 --no-build-isolation || true
+    pip install grouped_gemm==0.1.4 || true
+
+    # Match README recommendation for H20/H800 environments.
+    pip install nvidia-cublas-cu12==12.4.5.8 || true
+
+%runscript
+    cd /workspace
+    exec "$@"
+
+%test
+    python - << 'PY'
+import torch
+import transformers
+print('torch:', torch.__version__)
+print('transformers:', transformers.__version__)
+PY
