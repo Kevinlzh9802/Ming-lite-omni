@@ -1,8 +1,9 @@
-# Models
+# Models and apptainers
 *.safetensors
 *.pt
 *.onnx
 *.sif
+*.sandbox/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
