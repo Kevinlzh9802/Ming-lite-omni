@@ -6,6 +6,7 @@ from transformers import (
     AutoTokenizer,
     GenerationConfig
 )
+from transformers.utils import is_flash_attn_2_available
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
@@ -41,10 +42,12 @@ class BailingMMInfer:
         }
 
     def load_model_processor(self):
+        attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "eager"
         model = BailingMMNativeForConditionalGeneration.from_pretrained(
             self.model_name_or_path,
             torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True
+            low_cpu_mem_usage=True,
+            attn_implementation=attn_impl
         ).eval().to(self.device)
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, trust_remote_code=True)

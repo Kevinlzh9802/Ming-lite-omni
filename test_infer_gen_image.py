@@ -35,7 +35,7 @@ def generate(messages, processor, model, save_image_path):
 if __name__ == '__main__':
     model_path = "."
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "sdpa"
+    attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "eager"
     model = BailingMMNativeForConditionalGeneration.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
