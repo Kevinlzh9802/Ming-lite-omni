@@ -24,7 +24,7 @@ set -euo pipefail
 # Paths
 # ---------------------------------------------------------------------------
 project_dir="$(pwd)"
-sif_file=/scratch/zli33/ming-lite-omni.sif
+sif_file=/scratch/zli33/apptainers/ming-lite-omni.sif
 
 # Default test script; override via first positional argument
 test_script="${1:-test_infer.py}"
