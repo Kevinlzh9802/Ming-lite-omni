@@ -28,14 +28,16 @@ import torch.nn.functional as F
 
 from transformers.activations import ACT2FN
 from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import (
-    is_flash_attn_2_available,
-    logging,
-)
+from transformers.utils import logging
 
 from typing import Union
 
 from transformers.configuration_utils import PretrainedConfig
+try:
+    from transformers.utils.import_utils import is_flash_attn_2_available
+except ImportError:
+    def is_flash_attn_2_available():
+        return False
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_varlen_func
@@ -65,7 +67,7 @@ class Qwen2_5_VLVisionConfig(PretrainedConfig):
         window_size=112,
         out_hidden_size=3584,
         fullatt_block_indexes=[7, 15, 23, 31],
-        _attn_implementation="flash_attention_2",
+        _attn_implementation=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -82,6 +84,8 @@ class Qwen2_5_VLVisionConfig(PretrainedConfig):
         self.window_size = window_size
         self.fullatt_block_indexes = fullatt_block_indexes
         self.out_hidden_size = out_hidden_size
+        if _attn_implementation is None:
+            _attn_implementation = "flash_attention_2" if is_flash_attn_2_available() else "eager"
         self._attn_implementation = _attn_implementation
 
     @classmethod

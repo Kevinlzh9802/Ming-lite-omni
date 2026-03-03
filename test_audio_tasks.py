@@ -6,7 +6,11 @@ from transformers import (
     AutoTokenizer,
     GenerationConfig
 )
-from transformers.utils import is_flash_attn_2_available
+try:
+    from transformers.utils.import_utils import is_flash_attn_2_available
+except ImportError:
+    def is_flash_attn_2_available():
+        return False
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
