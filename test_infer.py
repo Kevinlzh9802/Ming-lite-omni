@@ -56,6 +56,8 @@ if __name__ == '__main__':
 
     vision_path = "/input/zhangqinglong.zql/assets/"
 
+    """
+    Disabled examples below (kept for reference):
     # qa
     messages = [
         {
@@ -67,17 +69,17 @@ if __name__ == '__main__':
     ]
     generate(messages=messages, processor=processor, model=model)
 
-    # image qa
-    messages = [
-        {
-            "role": "HUMAN",
-            "content": [
-                {"type": "image", "image": os.path.join(vision_path, "flowers.jpg")},
-                {"type": "text", "text": "What kind of flower is this?"},
-            ],
-        },
-    ]
-    generate(messages=messages, processor=processor, model=model)
+    # # image qa
+    # messages = [
+    #     {
+    #         "role": "HUMAN",
+    #         "content": [
+    #             {"type": "image", "image": os.path.join(vision_path, "flowers.jpg")},
+    #             {"type": "text", "text": "What kind of flower is this?"},
+    #         ],
+    #     },
+    # ]
+    # generate(messages=messages, processor=processor, model=model)
 
     # video qa
     messages = [
@@ -85,12 +87,12 @@ if __name__ == '__main__':
             "role": "HUMAN",
             "content": [
                 {"type": "video", "video": os.path.join(vision_path, "yoga.mp4"),"max_frames":128, "sample": "uniform"},
-                {"type": "text", "text": "What is the woman doing?"},
+                {"type": "text", "text": "Explain what you see?"},
             ],
         },
     ]
     generate(messages=messages, processor=processor, model=model)
-
+    """
     # multi-turn chat
     messages = [
         {
@@ -114,12 +116,26 @@ if __name__ == '__main__':
     ]
     generate(messages=messages, processor=processor, model=model)
 
+    # messages = [
+    #     {
+    #         "role": "HUMAN",
+    #         "content": [
+    #             {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
+    #             {"type": "audio", "audio": '/input/dongli.xq/BAC009S0915W0292.wav'},
+    #         ],
+    #     },
+    # ]
+    # generate(messages=messages, processor=processor, model=model)
+    # """
+
+    # video + audio qa
     messages = [
         {
             "role": "HUMAN",
             "content": [
-                {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
-                {"type": "audio", "audio": '/input/dongli.xq/BAC009S0915W0292.wav'},
+                {"type": "video", "video": "/scratch/zli33/data/gestalt_bench/sample/clip_11.mp4", "max_frames": 128, "sample": "uniform"},
+                {"type": "audio", "audio": "/scratch/zli33/data/gestalt_bench/sample/clip_11.wav"},
+                {"type": "text", "text": "describe what you see in this video"},
             ],
         },
     ]

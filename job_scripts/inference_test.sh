@@ -56,6 +56,7 @@ echo ""
 
 apptainer exec --nv \
     --bind "$project_dir":/workspace \
+    --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \
     "$sif_file" \
     python "$test_script"
