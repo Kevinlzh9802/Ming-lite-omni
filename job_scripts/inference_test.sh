@@ -54,6 +54,13 @@ echo "[INFO] project_dir= $project_dir"
 echo "[INFO] test_script= $test_script"
 echo ""
 
+echo "[HOST] nvidia-smi:"
+nvidia-smi || true
+
+echo "[CONTAINER] nvidia-smi + libcuda:"
+apptainer exec --nv "$sif_file" bash -lc \
+  'nvidia-smi; (ldconfig -p | grep libcuda || true); (find /usr -name "libcuda.so*" 2>/dev/null | head)'
+
 apptainer exec --nv \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
