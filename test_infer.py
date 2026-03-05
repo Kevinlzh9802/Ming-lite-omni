@@ -2,11 +2,6 @@ import os
 import time
 import torch
 from transformers import AutoProcessor
-try:
-    from transformers.utils.import_utils import is_flash_attn_2_available
-except ImportError:
-    def is_flash_attn_2_available():
-        return False
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
@@ -47,12 +42,13 @@ def generate(messages, processor, model):
 if __name__ == '__main__':
     processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
     model_path = "."
-    attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "eager"
     model = BailingMMNativeForConditionalGeneration.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
-        attn_implementation=attn_impl,
-    ).to("cuda")
+        attn_implementation="flash_attention_2",
+        low_cpu_mem_usage=True,
+        device_map={"": 0},
+    )
 
     vision_path = "/input/zhangqinglong.zql/assets/"
 

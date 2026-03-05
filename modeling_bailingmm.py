@@ -545,7 +545,17 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
         self.diffusion_loss.to(self.model.device)
         #self.norm_query_embeds = True
         # load connector
-        self.connector = AutoModelForCausalLM.from_pretrained(inference_model_path, subfolder='connector')
+        connector_kwargs = {"subfolder": "connector"}
+        if self.model.device.type == "cuda":
+            connector_kwargs.update(
+                {
+                    "torch_dtype": self.model.dtype,
+                    "attn_implementation": "flash_attention_2",
+                    "low_cpu_mem_usage": True,
+                    "device_map": {"": self.model.device.index or 0},
+                }
+            )
+        self.connector = AutoModelForCausalLM.from_pretrained(inference_model_path, **connector_kwargs)
         for layer in self.connector.model.layers:
             layer.self_attn.is_causal = False
         self.connector.to(self.model.device)

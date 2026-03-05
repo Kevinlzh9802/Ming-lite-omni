@@ -6,11 +6,6 @@ from transformers import (
     AutoTokenizer,
     GenerationConfig
 )
-try:
-    from transformers.utils.import_utils import is_flash_attn_2_available
-except ImportError:
-    def is_flash_attn_2_available():
-        return False
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
@@ -46,13 +41,20 @@ class BailingMMInfer:
         }
 
     def load_model_processor(self):
-        attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "eager"
-        model = BailingMMNativeForConditionalGeneration.from_pretrained(
-            self.model_name_or_path,
+        load_kwargs = dict(
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
-            attn_implementation=attn_impl
-        ).eval().to(self.device)
+            attn_implementation="flash_attention_2",
+        )
+        if self.device == "cuda":
+            load_kwargs["device_map"] = {"": 0}
+
+        model = BailingMMNativeForConditionalGeneration.from_pretrained(
+            self.model_name_or_path,
+            **load_kwargs
+        ).eval()
+        if self.device != "cuda":
+            model = model.to(self.device)
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, trust_remote_code=True)
         processor = AutoProcessor.from_pretrained(self.model_name_or_path, trust_remote_code=True)

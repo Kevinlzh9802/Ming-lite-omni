@@ -1,11 +1,6 @@
 """ Bailing MoE model configuration """
 
 from transformers.configuration_utils import PretrainedConfig
-try:
-    from transformers.utils.import_utils import is_flash_attn_2_available
-except ImportError:
-    def is_flash_attn_2_available():
-        return False
 
 
 class BailingMoeConfig(PretrainedConfig):
@@ -47,7 +42,7 @@ class BailingMoeConfig(PretrainedConfig):
         output_router_logits=False,
         multi_gate=False,
         image_patch_token=126346,
-        _attn_implementation=None,
+        _attn_implementation="flash_attention_2",
         **kwargs,
     ):
         self.num_hidden_layers = num_hidden_layers
@@ -85,6 +80,4 @@ class BailingMoeConfig(PretrainedConfig):
         self.multi_gate = multi_gate
         self.image_patch_token = image_patch_token
         super().__init__(pad_token_id=pad_token_id, tie_word_embeddings=tie_word_embeddings, **kwargs)
-        if _attn_implementation is None:
-            _attn_implementation = "flash_attention_2" if is_flash_attn_2_available() else "eager"
         self._attn_implementation = _attn_implementation
