@@ -62,6 +62,7 @@ apptainer exec --nv "$sif_file" bash -lc \
   'nvidia-smi; (ldconfig -p | grep libcuda || true); (find /usr -name "libcuda.so*" 2>/dev/null | head)'
 
 apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/usr/local/cuda-12.1/compat:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-} \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \
