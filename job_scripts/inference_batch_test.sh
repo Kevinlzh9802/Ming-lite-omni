@@ -62,6 +62,25 @@ apptainer exec --nv --writable-tmpfs \
     export TRITON_LIBCUDA_PATH=/tmp/triton-libcuda
     export LD_LIBRARY_PATH=/tmp/triton-libcuda:\${LD_LIBRARY_PATH:-}
 
+    python - <<'PY'
+from pathlib import Path
+p = Path('/opt/conda/lib/python3.10/site-packages/triton/common/build.py')
+txt = p.read_text()
+needle = '@functools.lru_cache()\ndef libcuda_dirs():\n'
+patch = '''@functools.lru_cache()
+def libcuda_dirs():
+    env_libcuda_path = os.getenv(\"TRITON_LIBCUDA_PATH\")
+    if env_libcuda_path:
+        return [env_libcuda_path]
+'''
+if 'TRITON_LIBCUDA_PATH' not in txt:
+    txt = txt.replace(needle, patch)
+    p.write_text(txt)
+    print('Patched Triton build.py')
+else:
+    print('Triton build.py already patched')
+PY
+
     python /workspace/batch_infer.py \
       --data-root \"$data_root\" \
       --output-json \"$output_json\"
