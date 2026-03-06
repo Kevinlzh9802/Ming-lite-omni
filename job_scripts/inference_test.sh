@@ -23,7 +23,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-project_dir="$(pwd)"
+project_dir="/scratch/zli33/models/Ming-lite-omni"
 sif_file=/scratch/zli33/apptainers/ming-lite-omni.sif
 
 # Default test script; override via first positional argument
