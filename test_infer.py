@@ -2,6 +2,7 @@ import os
 import time
 import torch
 from transformers import AutoProcessor
+from transformers.utils import is_flash_attn_2_available
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
@@ -42,10 +43,11 @@ def generate(messages, processor, model):
 if __name__ == '__main__':
     processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
     model_path = "."
+    attn_impl = "flash_attention_2" if is_flash_attn_2_available() else "sdpa"
     model = BailingMMNativeForConditionalGeneration.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
         low_cpu_mem_usage=True,
         device_map={"": 0},
     )

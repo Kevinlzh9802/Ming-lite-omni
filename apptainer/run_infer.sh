@@ -25,4 +25,4 @@ apptainer exec --nv \
     --bind "$ROOT_DIR":/workspace \
     --pwd /workspace \
     "$SIF_FILE" \
-    "$@"
+    bash -c 'export LD_LIBRARY_PATH=/usr/local/cuda/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; exec "$@"' _ "$@"

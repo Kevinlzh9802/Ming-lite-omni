@@ -57,17 +57,16 @@ echo ""
 echo "[HOST] nvidia-smi:"
 nvidia-smi || true
 
-echo "[CONTAINER] nvidia-smi + libcuda:"
-apptainer exec --nv "$sif_file" bash -lc \
-  'nvidia-smi; (ldconfig -p | grep libcuda || true); (find /usr -name "libcuda.so*" 2>/dev/null | head)'
-
+# Prepend the CUDA 12.1 forward-compat stubs so the container's libcuda.so
+# takes priority over the (possibly older) host driver injected by --nv.
+# This fixes "error 803: unsupported display driver / cuda driver combination"
+# on clusters whose host driver is older than CUDA 12.1.
 apptainer exec --nv \
-    --env LD_LIBRARY_PATH=/usr/local/cuda-12.1/compat:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-} \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \
     "$sif_file" \
-    python "$test_script"
+    bash -c 'export LD_LIBRARY_PATH=/usr/local/cuda/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; python "$@"' _ "$test_script"
 
 echo ""
 echo "[INFO] Inference test completed successfully."
