@@ -58,45 +58,30 @@ echo "[HOST] nvidia-smi:"
 nvidia-smi || true
 
 # Triton's JIT compiler needs the unversioned "libcuda.so" to link GPU
-# kernels at runtime.  Apptainer --nv injects the host driver as
-# libcuda.so.1 but does NOT create the unversioned symlink.
+# kernels.  Apptainer --nv injects the host driver into /.singularity.d/libs
+# (which may include libcuda.so), but Triton's libcuda_dirs() searches
+# ldconfig and hardcoded paths like /usr/lib64 — NOT LD_LIBRARY_PATH.
 #
-# Strategy: create a host-side temp directory with the symlink pointing
-# at the real host libcuda.so.1, then bind-mount it so it appears inside
-# the container on LD_LIBRARY_PATH.
-cuda_stub_dir=$(mktemp -d)
-trap 'rm -rf "$cuda_stub_dir"' EXIT
-
-# Locate the host libcuda.so.1
-host_libcuda=$(ldconfig -p 2>/dev/null | grep 'libcuda\.so\.1 ' | head -1 | sed 's/.*=> //')
-if [ -z "$host_libcuda" ]; then
-    host_libcuda=$(find /usr/lib /usr/lib64 /usr/local -name 'libcuda.so.1' 2>/dev/null | head -1)
-fi
-if [ -n "$host_libcuda" ]; then
-    ln -s "$host_libcuda" "$cuda_stub_dir/libcuda.so"
-    echo "[HOST] Created libcuda.so symlink -> $host_libcuda in $cuda_stub_dir"
-else
-    echo "[HOST][WARN] Could not find libcuda.so.1 on the host"
-fi
-
-apptainer exec --nv \
+# Fix: bind-mount a directory containing a libcuda.so symlink (pointing to
+# the --nv-injected library) over /usr/lib64 would be destructive, so
+# instead we create the symlink inside the container via the bash wrapper.
+apptainer exec --nv --writable-tmpfs \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
-    --bind "$cuda_stub_dir":/cuda_stub \
     --pwd /workspace \
     "$sif_file" \
     bash -c '
-        export LD_LIBRARY_PATH=/cuda_stub${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-        echo "[CONTAINER] LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-        echo "[CONTAINER] libcuda.so check:"
-        ls -la /cuda_stub/
-        python -c "
-import os
-dirs = os.environ.get(\"LD_LIBRARY_PATH\", \"\").split(\":\")
-for d in dirs:
-    p = os.path.join(d, \"libcuda.so\")
-    print(f\"  {p}: exists={os.path.exists(p)}\")
-"
+        # Create unversioned libcuda.so symlink where Triton can find it.
+        # /.singularity.d/libs has the --nv injected driver libraries.
+        real=$(find /.singularity.d/libs -name "libcuda.so.1" 2>/dev/null | head -1)
+        if [ -n "$real" ]; then
+            # /usr/lib64 is a standard path Triton checks via ldconfig/hardcode
+            ln -sf "$real" /usr/lib64/libcuda.so 2>/dev/null || \
+            ln -sf "$real" /usr/local/lib/libcuda.so 2>/dev/null || \
+            echo "[WARN] Could not create libcuda.so symlink"
+        fi
+        echo "[CONTAINER] libcuda.so locations:"
+        find / -name "libcuda.so" -not -path "*/proc/*" 2>/dev/null
         python "$@"
     ' _ "$test_script"
 
