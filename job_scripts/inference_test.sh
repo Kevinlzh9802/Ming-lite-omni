@@ -65,17 +65,42 @@ nvidia-smi || true
 # Fix: bind-mount a directory containing a libcuda.so symlink (pointing to
 # the --nv-injected library) over /usr/lib64 would be destructive, so
 # instead we create the symlink inside the container via the bash wrapper.
-apptainer exec --nv --writable-tmpfs "$sif_file" bash -lc '
-python - <<PY
-import triton, inspect
-import triton.common.build as b
-print("triton version:", triton.__version__)
-print("build.py:", inspect.getsourcefile(b))
+apptainer exec --nv --writable-tmpfs \
+  --bind "$project_dir":/workspace \
+  --bind /scratch/zli33:/scratch/zli33 \
+  --pwd /workspace \
+  "$sif_file" \
+  bash -lc '
+    set -euo pipefail
+
+    real=$(find /.singularity.d/libs -name "libcuda.so.1" 2>/dev/null | head -1)
+    test -n "$real"
+
+    mkdir -p /tmp/triton-libcuda
+    ln -sf "$real" /tmp/triton-libcuda/libcuda.so
+    ln -sf "$real" /tmp/triton-libcuda/libcuda.so.1
+
+    export TRITON_LIBCUDA_PATH=/tmp/triton-libcuda
+    export LD_LIBRARY_PATH=/tmp/triton-libcuda:${LD_LIBRARY_PATH:-}
+
+    python - <<PY
+from pathlib import Path
+p = Path("/opt/conda/lib/python3.10/site-packages/triton/common/build.py")
+txt = p.read_text()
+needle = "@functools.lru_cache()\ndef libcuda_dirs():\n"
+patch = """@functools.lru_cache()
+def libcuda_dirs():
+    env_libcuda_path = os.getenv(\"TRITON_LIBCUDA_PATH\")
+    if env_libcuda_path:
+        return [env_libcuda_path]
+"""
+if "TRITON_LIBCUDA_PATH" not in txt:
+    txt = txt.replace(needle, patch)
+    p.write_text(txt)
+    print("Patched Triton build.py")
+else:
+    print("Triton build.py already patched")
 PY
-real=$(find /.singularity.d/libs -name "libcuda.so.1" | head -1)
-mkdir -p /usr/local/libcuda-workaround
-ln -sf "$real" /usr/local/libcuda-workaround/libcuda.so
-echo /usr/local/libcuda-workaround >/etc/ld.so.conf.d/libcuda-workaround.conf
-ldconfig
-ldconfig -p | grep libcuda || true
-'
+
+    python "'"$test_script"'"
+  '
