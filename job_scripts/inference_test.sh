@@ -57,22 +57,35 @@ echo ""
 echo "[HOST] nvidia-smi:"
 nvidia-smi || true
 
-# The host driver (580.x, CUDA 13.0) is newer than what the container's
-# CUDA 12.1 runtime requires (>=530.30.02).  Apptainer --nv injects the
-# host's libcuda.so.1 into /.singularity.d/libs which is correct.
-#
-# The container also ships old compat stubs (530.x) in /usr/local/cuda/compat.
-# That directory must come AFTER /.singularity.d/libs so the dynamic linker
-# picks up the host's newer libcuda.so.1 at runtime.  However it must still
-# be present because Triton's JIT compiler searches LD_LIBRARY_PATH for the
-# unversioned "libcuda.so" symlink, which only exists in /usr/local/cuda/compat.
+# Triton's JIT compiler needs the unversioned "libcuda.so" symlink to build
+# GPU kernels.  Apptainer --nv injects the host driver as libcuda.so.1 into
+# /.singularity.d/libs but does NOT create the unversioned symlink.
+# We create it in a writable tmpdir at runtime and prepend that to
+# LD_LIBRARY_PATH, leaving the --nv-injected paths intact.
 apptainer exec --nv \
-    --env LD_LIBRARY_PATH=/.singularity.d/libs:/usr/local/cuda/lib64:/usr/local/cuda/compat \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \
     "$sif_file" \
-    python "$test_script"
+    bash -c '
+        cuda_stub_dir=$(mktemp -d)
+        # Find the real libcuda.so.1 that --nv injected
+        real_libcuda=$(ldconfig -p 2>/dev/null | grep "libcuda.so.1 " | head -1 | sed "s/.*=> //")
+        if [ -z "$real_libcuda" ]; then
+            # fallback: search /.singularity.d/libs directly
+            real_libcuda=$(find /.singularity.d/libs -name "libcuda.so.1" 2>/dev/null | head -1)
+        fi
+        if [ -n "$real_libcuda" ]; then
+            ln -s "$real_libcuda" "$cuda_stub_dir/libcuda.so"
+            echo "[CONTAINER] Created libcuda.so symlink -> $real_libcuda in $cuda_stub_dir"
+        else
+            echo "[CONTAINER][WARN] Could not find libcuda.so.1"
+        fi
+        export LD_LIBRARY_PATH="$cuda_stub_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        echo "[CONTAINER] LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+        python "$@"
+        rm -rf "$cuda_stub_dir"
+    ' _ "$test_script"
 
 echo ""
 echo "[INFO] Inference test completed successfully."

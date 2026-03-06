@@ -22,8 +22,19 @@ if [ "$#" -eq 0 ]; then
 fi
 
 apptainer exec --nv \
-    --env LD_LIBRARY_PATH=/.singularity.d/libs:/usr/local/cuda/lib64:/usr/local/cuda/compat \
     --bind "$ROOT_DIR":/workspace \
     --pwd /workspace \
     "$SIF_FILE" \
-    "$@"
+    bash -c '
+        cuda_stub_dir=$(mktemp -d)
+        real_libcuda=$(ldconfig -p 2>/dev/null | grep "libcuda.so.1 " | head -1 | sed "s/.*=> //")
+        if [ -z "$real_libcuda" ]; then
+            real_libcuda=$(find /.singularity.d/libs -name "libcuda.so.1" 2>/dev/null | head -1)
+        fi
+        if [ -n "$real_libcuda" ]; then
+            ln -s "$real_libcuda" "$cuda_stub_dir/libcuda.so"
+        fi
+        export LD_LIBRARY_PATH="$cuda_stub_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        exec "$@"
+        rm -rf "$cuda_stub_dir"
+    ' _ "$@"
