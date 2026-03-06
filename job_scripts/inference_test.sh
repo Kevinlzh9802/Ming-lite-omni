@@ -57,34 +57,47 @@ echo ""
 echo "[HOST] nvidia-smi:"
 nvidia-smi || true
 
-# Triton's JIT compiler needs the unversioned "libcuda.so" symlink to build
-# GPU kernels.  Apptainer --nv injects the host driver as libcuda.so.1 into
-# /.singularity.d/libs but does NOT create the unversioned symlink.
-# We create it in a writable tmpdir at runtime and prepend that to
-# LD_LIBRARY_PATH, leaving the --nv-injected paths intact.
+# Triton's JIT compiler needs the unversioned "libcuda.so" to link GPU
+# kernels at runtime.  Apptainer --nv injects the host driver as
+# libcuda.so.1 but does NOT create the unversioned symlink.
+#
+# Strategy: create a host-side temp directory with the symlink pointing
+# at the real host libcuda.so.1, then bind-mount it so it appears inside
+# the container on LD_LIBRARY_PATH.
+cuda_stub_dir=$(mktemp -d)
+trap 'rm -rf "$cuda_stub_dir"' EXIT
+
+# Locate the host libcuda.so.1
+host_libcuda=$(ldconfig -p 2>/dev/null | grep 'libcuda\.so\.1 ' | head -1 | sed 's/.*=> //')
+if [ -z "$host_libcuda" ]; then
+    host_libcuda=$(find /usr/lib /usr/lib64 /usr/local -name 'libcuda.so.1' 2>/dev/null | head -1)
+fi
+if [ -n "$host_libcuda" ]; then
+    ln -s "$host_libcuda" "$cuda_stub_dir/libcuda.so"
+    echo "[HOST] Created libcuda.so symlink -> $host_libcuda in $cuda_stub_dir"
+else
+    echo "[HOST][WARN] Could not find libcuda.so.1 on the host"
+fi
+
 apptainer exec --nv \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
+    --bind "$cuda_stub_dir":/cuda_stub \
     --pwd /workspace \
     "$sif_file" \
     bash -c '
-        cuda_stub_dir=$(mktemp -d)
-        # Find the real libcuda.so.1 that --nv injected
-        real_libcuda=$(ldconfig -p 2>/dev/null | grep "libcuda.so.1 " | head -1 | sed "s/.*=> //")
-        if [ -z "$real_libcuda" ]; then
-            # fallback: search /.singularity.d/libs directly
-            real_libcuda=$(find /.singularity.d/libs -name "libcuda.so.1" 2>/dev/null | head -1)
-        fi
-        if [ -n "$real_libcuda" ]; then
-            ln -s "$real_libcuda" "$cuda_stub_dir/libcuda.so"
-            echo "[CONTAINER] Created libcuda.so symlink -> $real_libcuda in $cuda_stub_dir"
-        else
-            echo "[CONTAINER][WARN] Could not find libcuda.so.1"
-        fi
-        export LD_LIBRARY_PATH="$cuda_stub_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH=/cuda_stub${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
         echo "[CONTAINER] LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+        echo "[CONTAINER] libcuda.so check:"
+        ls -la /cuda_stub/
+        python -c "
+import os
+dirs = os.environ.get(\"LD_LIBRARY_PATH\", \"\").split(\":\")
+for d in dirs:
+    p = os.path.join(d, \"libcuda.so\")
+    print(f\"  {p}: exists={os.path.exists(p)}\")
+"
         python "$@"
-        rm -rf "$cuda_stub_dir"
     ' _ "$test_script"
 
 echo ""
