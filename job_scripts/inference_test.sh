@@ -80,8 +80,11 @@ apptainer exec --nv --writable-tmpfs \
             ln -sf "$real" /usr/local/lib/libcuda.so 2>/dev/null || \
             echo "[WARN] Could not create libcuda.so symlink"
         fi
-        echo "[CONTAINER] libcuda.so locations:"
-        find / -name "libcuda.so" -not -path "*/proc/*" 2>/dev/null
+        # Triton uses `ldconfig -p` to discover libcuda directories.
+        # Refresh the cache so it picks up the new symlink.
+        ldconfig 2>/dev/null || true
+        echo "[CONTAINER] ldconfig libcuda entries:"
+        ldconfig -p 2>/dev/null | grep libcuda || true
         python "$@"
     ' _ "$test_script"
 
