@@ -57,19 +57,18 @@ echo ""
 echo "[HOST] nvidia-smi:"
 nvidia-smi || true
 
-# Prepend the CUDA 12.1 forward-compat stubs so the container's libcuda.so
-# takes priority over the (possibly older) host driver injected by --nv.
-# This fixes "error 803: unsupported display driver / cuda driver combination"
-# on clusters whose host driver is older than CUDA 12.1.
+# The host driver (580.x, CUDA 13.0) is newer than what the container's
+# CUDA 12.1 runtime requires (>=530.30.02).  Apptainer --nv injects the
+# host's libcuda.so into /.singularity.d/libs which is perfect.
 #
-# Debug: show what the container sees
+# However the container image also ships old compat stubs (530.x) in
+# /usr/local/cuda/compat.  If that directory lands on LD_LIBRARY_PATH
+# before /.singularity.d/libs, PyTorch loads the stale 530.x libcuda
+# and fails with "error 803".
+#
+# Fix: ensure /.singularity.d/libs (host driver) comes first.
 apptainer exec --nv \
-    --env LD_LIBRARY_PATH=/usr/local/cuda/compat \
-    "$sif_file" \
-    bash -c 'echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"; ls -la /usr/local/cuda/compat/ 2>/dev/null || echo "no compat dir"; nvidia-smi; python -c "import torch; print(\"CUDA available:\", torch.cuda.is_available()); print(\"Device count:\", torch.cuda.device_count())"'
-
-apptainer exec --nv \
-    --env LD_LIBRARY_PATH=/usr/local/cuda/compat \
+    --env LD_LIBRARY_PATH=/.singularity.d/libs:/usr/local/cuda/lib64 \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \

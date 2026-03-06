@@ -22,7 +22,8 @@ if [ "$#" -eq 0 ]; then
 fi
 
 apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/.singularity.d/libs:/usr/local/cuda/lib64 \
     --bind "$ROOT_DIR":/workspace \
     --pwd /workspace \
     "$SIF_FILE" \
-    bash -c 'export LD_LIBRARY_PATH=/usr/local/cuda/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; exec "$@"' _ "$@"
+    "$@"
