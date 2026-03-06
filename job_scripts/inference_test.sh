@@ -61,12 +61,20 @@ nvidia-smi || true
 # takes priority over the (possibly older) host driver injected by --nv.
 # This fixes "error 803: unsupported display driver / cuda driver combination"
 # on clusters whose host driver is older than CUDA 12.1.
+#
+# Debug: show what the container sees
 apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/usr/local/cuda/compat \
+    "$sif_file" \
+    bash -c 'echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"; ls -la /usr/local/cuda/compat/ 2>/dev/null || echo "no compat dir"; nvidia-smi; python -c "import torch; print(\"CUDA available:\", torch.cuda.is_available()); print(\"Device count:\", torch.cuda.device_count())"'
+
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/usr/local/cuda/compat \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \
     "$sif_file" \
-    bash -c 'export LD_LIBRARY_PATH=/usr/local/cuda/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; python "$@"' _ "$test_script"
+    python "$test_script"
 
 echo ""
 echo "[INFO] Inference test completed successfully."
