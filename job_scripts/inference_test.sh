@@ -59,16 +59,15 @@ nvidia-smi || true
 
 # The host driver (580.x, CUDA 13.0) is newer than what the container's
 # CUDA 12.1 runtime requires (>=530.30.02).  Apptainer --nv injects the
-# host's libcuda.so into /.singularity.d/libs which is perfect.
+# host's libcuda.so.1 into /.singularity.d/libs which is correct.
 #
-# However the container image also ships old compat stubs (530.x) in
-# /usr/local/cuda/compat.  If that directory lands on LD_LIBRARY_PATH
-# before /.singularity.d/libs, PyTorch loads the stale 530.x libcuda
-# and fails with "error 803".
-#
-# Fix: ensure /.singularity.d/libs (host driver) comes first.
+# The container also ships old compat stubs (530.x) in /usr/local/cuda/compat.
+# That directory must come AFTER /.singularity.d/libs so the dynamic linker
+# picks up the host's newer libcuda.so.1 at runtime.  However it must still
+# be present because Triton's JIT compiler searches LD_LIBRARY_PATH for the
+# unversioned "libcuda.so" symlink, which only exists in /usr/local/cuda/compat.
 apptainer exec --nv \
-    --env LD_LIBRARY_PATH=/.singularity.d/libs:/usr/local/cuda/lib64 \
+    --env LD_LIBRARY_PATH=/.singularity.d/libs:/usr/local/cuda/lib64:/usr/local/cuda/compat \
     --bind "$project_dir":/workspace \
     --bind /scratch/zli33:/scratch/zli33 \
     --pwd /workspace \
