@@ -14,18 +14,60 @@
 # Batch Ming-Lite-Omni inference via Apptainer.
 #
 # Submit from the project folder:
-#   sbatch job_scripts/inference_batch_test.sh
+#   sbatch job_scripts/inference_batch_test.sh -set test_run -prompt intention
 
 set -euo pipefail
+
+dataset_set=""
+prompt=""
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --)
+            shift
+            ;;
+        -set|--set)
+            if [ "$#" -lt 2 ]; then
+                echo "[ERROR] Missing value for $1" >&2
+                exit 1
+            fi
+            dataset_set="$2"
+            shift 2
+            ;;
+        -prompt|--prompt)
+            if [ "$#" -lt 2 ]; then
+                echo "[ERROR] Missing value for $1" >&2
+                exit 1
+            fi
+            prompt="$2"
+            shift 2
+            ;;
+        *)
+            echo "[ERROR] Unknown argument: $1" >&2
+            echo "Usage: sbatch job_scripts/inference_batch_test.sh -set <folder_name> -prompt <prompt_name>" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$dataset_set" ]; then
+    echo "[ERROR] Missing required argument: -set <folder_name>" >&2
+    exit 1
+fi
+
+if [ -z "$prompt" ]; then
+    echo "[ERROR] Missing required argument: -prompt <prompt_name>" >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 project_dir="/scratch/zli33/models/Ming-lite-omni"
 sif_file=/scratch/zli33/apptainers/ming-lite-omni.sif
-data_root="/scratch/zli33/data/gestalt_bench/test_run_part"
-result_dir="/scratch/zli33/data/gestalt_bench/results/ming-lite-omni"
-output_json="${result_dir}/responses_${SLURM_JOB_ID}.json"
+data_root="/scratch/zli33/data/gestalt_bench/${dataset_set}"
+result_dir="/scratch/zli33/data/gestalt_bench/results/ming-lite-omni/${dataset_set}/Ming-lite-omni_${prompt}"
+output_json="${result_dir}/results.json"
 
 # ---------------------------------------------------------------------------
 # Pre-flight checks
@@ -41,8 +83,18 @@ if [ ! -f "$project_dir/batch_infer.py" ]; then
     exit 1
 fi
 
-if [ ! -f "$project_dir/prompts/sample.txt" ]; then
-    echo "[ERROR] Prompt file not found: $project_dir/prompts/sample.txt" >&2
+if [ ! -d "$data_root" ]; then
+    echo "[ERROR] Dataset folder not found: $data_root" >&2
+    exit 1
+fi
+
+if [ ! -f "$project_dir/prompts/${prompt}_1.txt" ]; then
+    echo "[ERROR] Prompt file not found: $project_dir/prompts/${prompt}_1.txt" >&2
+    exit 1
+fi
+
+if [ ! -f "$project_dir/prompts/${prompt}_after.txt" ]; then
+    echo "[ERROR] Prompt file not found: $project_dir/prompts/${prompt}_after.txt" >&2
     exit 1
 fi
 
@@ -55,8 +107,10 @@ mkdir -p "$result_dir"
 # ---------------------------------------------------------------------------
 echo "[INFO] sif_file   = $sif_file"
 echo "[INFO] project_dir= $project_dir"
+echo "[INFO] set        = $dataset_set"
 echo "[INFO] data_root  = $data_root"
 echo "[INFO] output_json= $output_json"
+echo "[INFO] prompt      = $prompt"
 echo ""
 
 echo "[HOST] nvidia-smi:"
@@ -110,7 +164,8 @@ PY
 
     python /workspace/batch_infer.py \
       --data-root "'"$data_root"'" \
-      --output-json "'"$output_json"'"
+      --output-json "'"$output_json"'" \
+      --prompt "'"$prompt"'"
   '
 
 echo ""

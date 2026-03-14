@@ -20,6 +20,7 @@ Output JSON:
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -28,7 +29,12 @@ from transformers import AutoProcessor
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
-PROMPT_FILE = Path("./prompts/sample.txt")
+PROMPTS_DIR = Path("./prompts")
+
+
+def natural_sort_key(value: str):
+    """Sort strings by text chunks and embedded integers."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", value)]
 
 
 def collect_av_pairs(data_root: Path) -> Dict[str, List[dict]]:
@@ -37,13 +43,15 @@ def collect_av_pairs(data_root: Path) -> Dict[str, List[dict]]:
         raise FileNotFoundError(f"Data root does not exist: {data_root}")
 
     result: Dict[str, List[dict]] = {}
-    for subfolder in sorted(data_root.iterdir()):
+    for subfolder in sorted(data_root.iterdir(), key=lambda path: natural_sort_key(path.name)):
         if not subfolder.is_dir():
             continue
 
         pairs: List[dict] = []
-        video_files = {f.stem: f for f in sorted(subfolder.glob("*.mp4"))}
-        for stem, video_path in sorted(video_files.items()):
+        video_files = {
+            f.stem: f for f in sorted(subfolder.glob("*.mp4"), key=lambda path: natural_sort_key(path.name))
+        }
+        for stem, video_path in sorted(video_files.items(), key=lambda item: natural_sort_key(item[0])):
             audio_path = subfolder / f"{stem}.wav"
             if not audio_path.exists():
                 print(f"[WARN] Missing audio for {video_path}, skip.")
@@ -81,27 +89,12 @@ def load_model_and_processor(model_path: str, device: str, attn_implementation: 
 
 
 @torch.inference_mode()
-def infer_single(
+def infer_messages(
     model,
     processor,
-    video_path: str,
-    audio_path: str,
-    prompt: str,
+    messages: List[dict],
     max_new_tokens: int,
-    max_frames: int,
-    sample: str,
 ) -> str:
-    messages = [
-        {
-            "role": "HUMAN",
-            "content": [
-                {"type": "video", "video": video_path, "max_frames": max_frames, "sample": sample},
-                {"type": "audio", "audio": audio_path},
-                {"type": "text", "text": prompt},
-            ],
-        },
-    ]
-
     text = processor.apply_chat_template(messages, add_generation_prompt=True)
     image_inputs, video_inputs, audio_inputs = processor.process_vision_info(messages)
 
@@ -139,7 +132,8 @@ def run_batch(
     model,
     processor,
     pairs_by_subfolder: Dict[str, List[dict]],
-    prompt: str,
+    first_turn_prompt: str,
+    later_turn_prompt: str,
     max_new_tokens: int,
     max_frames: int,
     sample: str,
@@ -149,22 +143,37 @@ def run_batch(
     for subfolder, pairs in pairs_by_subfolder.items():
         print(f"[INFO] Processing {subfolder}: {len(pairs)} pairs")
         items: List[dict] = []
-        for pair in pairs:
+        messages: List[dict] = []
+        for pair_idx, pair in enumerate(pairs):
             stem = pair["stem"]
+            prompt = first_turn_prompt if pair_idx == 0 else later_turn_prompt
+            messages.append(
+                {
+                    "role": "HUMAN",
+                    "content": [
+                        {"type": "video", "video": pair["video"], "max_frames": max_frames, "sample": sample},
+                        {"type": "audio", "audio": pair["audio"]},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            )
             try:
-                response = infer_single(
+                response = infer_messages(
                     model=model,
                     processor=processor,
-                    video_path=pair["video"],
-                    audio_path=pair["audio"],
-                    prompt=prompt,
+                    messages=messages,
                     max_new_tokens=max_new_tokens,
-                    max_frames=max_frames,
-                    sample=sample,
+                )
+                messages.append(
+                    {
+                        "role": "ASSISTANT",
+                        "content": [{"type": "text", "text": response}],
+                    }
                 )
                 print(f"[OK] {subfolder}/{stem}")
             except Exception as exc:
                 response = f"[ERROR] {type(exc).__name__}: {exc}"
+                messages.pop()
                 print(f"[ERR] {subfolder}/{stem}: {response}")
 
             items.append(
@@ -179,19 +188,26 @@ def run_batch(
     return output
 
 
-def load_fixed_prompt() -> str:
-    if not PROMPT_FILE.is_file():
-        raise FileNotFoundError(f"Prompt file not found: {PROMPT_FILE}")
-    prompt = PROMPT_FILE.read_text(encoding="utf-8").strip()
+def load_prompt(prompt_path: Path) -> str:
+    if not prompt_path.is_file():
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+    prompt = prompt_path.read_text(encoding="utf-8").strip()
     if not prompt:
-        raise ValueError(f"Prompt file is empty: {PROMPT_FILE}")
+        raise ValueError(f"Prompt file is empty: {prompt_path}")
     return prompt
+
+
+def load_prompts(prompt: str) -> tuple[str, str]:
+    first_turn_path = PROMPTS_DIR / f"{prompt}_1.txt"
+    later_turn_path = PROMPTS_DIR / f"{prompt}_after.txt"
+    return load_prompt(first_turn_path), load_prompt(later_turn_path)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Batch AV-pair inference for Ming-Lite-Omni.")
     parser.add_argument("--data-root", type=str, required=True, help="Parent folder containing subfolders with AV pairs.")
     parser.add_argument("--output-json", type=str, required=True, help="Path to write aggregated JSON output.")
+    parser.add_argument("--prompt", type=str, required=True, help="Prompt prefix in ./prompts, e.g. foo -> foo_1.txt and foo_after.txt.")
     parser.add_argument("--model-path", type=str, default=".")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--attn-implementation", type=str, default="flash_attention_2")
@@ -203,8 +219,9 @@ def main():
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is requested but not available.")
 
-    prompt = load_fixed_prompt()
-    print(f"[INFO] Loaded prompt from {PROMPT_FILE}")
+    first_turn_prompt, later_turn_prompt = load_prompts(args.prompt)
+    print(f"[INFO] Loaded first-turn prompt from {PROMPTS_DIR / f'{args.prompt}_1.txt'}")
+    print(f"[INFO] Loaded later-turn prompt from {PROMPTS_DIR / f'{args.prompt}_after.txt'}")
 
     data_root = Path(args.data_root)
     pairs = collect_av_pairs(data_root)
@@ -221,7 +238,8 @@ def main():
         model=model,
         processor=processor,
         pairs_by_subfolder=pairs,
-        prompt=prompt,
+        first_turn_prompt=first_turn_prompt,
+        later_turn_prompt=later_turn_prompt,
         max_new_tokens=args.max_new_tokens,
         max_frames=args.max_frames,
         sample=args.sample,
