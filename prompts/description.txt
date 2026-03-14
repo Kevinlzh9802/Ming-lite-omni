@@ -1,0 +1,6 @@
+
+In the following you will be progressively given a series of videos and their associated audios. Each of them is part of an entire utterance. 
+
+Describe what do you observe from the given video and audio.
+
+[especially, compared to the what you perceive previously, what additional information do you get?]
